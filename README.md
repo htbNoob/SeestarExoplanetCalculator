@@ -4,11 +4,14 @@ A Jupyter notebook for planning and simulating exoplanet transit observations wi
 
 ## Features
 
+- **Unified configuration cell** — all imports and every tunable parameter in a single cell (cell 2); run it once at startup to configure the entire notebook
 - **Saturation calculator** — find the brightest star magnitude a given exposure can handle before saturating the 12-bit sensor
 - **Max exposure estimator** — given a target magnitude, compute the longest safe exposure (with configurable safety margin)
 - **Full SNR model** — aperture-photometry SNR including shot noise, sky background, dark current, and read noise
 - **SNR overview plots** — three diagnostic charts: SNR vs exposure time, SNR vs star magnitude, and SNR vs sky brightness (Bortle scale)
 - **Simulated transit light curve** — physically-motivated, limb-darkened transit simulation with per-frame photon noise; produces a publication-style figure with residuals and a stellar disk diagram
+- **Tonight's best observable transits** — queries the NASA Exoplanet Archive TAP service live, filters by altitude, magnitude, and depth, ranks candidates, and plots simulated light curves for the top hits
+- **Tonight's best eclipsing binaries & compact-object systems** — queries AAVSO VSX for EA/EB/EW variables and checks a curated list of white-dwarf, neutron-star, and black-hole binaries; ranks by depth × SNR × coverage and plots trapezoidal simulated light curves
 
 ## Requirements
 
@@ -27,11 +30,13 @@ pip install numpy matplotlib astropy requests
 
 ## Usage
 
-Open `SeestarExoplanetCalculator.ipynb` in Jupyter or VS Code and run the cells in order.
+Open `SeestarExoplanetCalculator.ipynb` in Jupyter or VS Code and **run cell 2 first** — it contains all imports and every tunable parameter. You only need to re-run cell 2 whenever you change a parameter.
 
-### Simulated Transit Light Curve (cell 5)
+### All Parameters (cell 2)
 
-Adjust the **USER PARAMETERS** block to match your target:
+All configuration lives in cell 2. The key sections are:
+
+**Simulated transit light curve (used by cell 8)**
 
 | Parameter | Description |
 |-----------|-------------|
@@ -43,9 +48,7 @@ Adjust the **USER PARAMETERS** block to match your target:
 | `EXPOSURE_S` | Single-frame exposure time (seconds) |
 | `SKY_MAG` | Sky surface brightness (mag/arcsec²) |
 
-### Tonight's Best Observable Transits (cell 7)
-
-Set your location and site conditions at the top of the cell:
+**Tonight's best observable transits (used by cell 10)**
 
 | Parameter | Description |
 |-----------|-------------|
@@ -57,7 +60,17 @@ Set your location and site conditions at the top of the cell:
 | `SKY_MAG_OBS` | Sky surface brightness — see table below |
 | `N_TOP` | How many top-ranked transits to display |
 
-**Sky brightness guide (`SKY_MAG_OBS`):**
+**Tonight's best eclipsing binaries & compact-object systems (used by cell 12)**
+
+| Parameter | Description |
+|-----------|-------------|
+| `MIN_DEPTH_EB` | Minimum eclipse depth to consider (magnitudes) |
+| `MAX_PERIOD_EB` | Maximum orbital period (days) |
+| `MIN_ALT_EB` | Minimum star altitude throughout eclipse (°) |
+| `N_TOP_EB` | How many top-ranked systems to display |
+| `BIN_MIN_EB` | Bin width for the simulated light curve (minutes) |
+
+**Sky brightness guide (`SKY_MAG_OBS` / `SKY_MAG`):**
 
 | Value | Bortle class | Typical location |
 |-------|-------------|-----------------|
@@ -83,16 +96,26 @@ Set your location and site conditions at the top of the cell:
 
 | # | Title | What it does |
 |---|-------|-------------|
-| 2 | Saturation & Photometry Calculator | Core functions: saturation magnitude, max exposure, SNR, transit depth conversions |
-| 4 | SNR Overview Plots | Three diagnostic charts: SNR vs exposure time, SNR vs star magnitude, SNR vs sky brightness |
-| 5 | Simulated Transit Light Curve | Full limb-darkened transit simulation with photon noise, residuals panel, and stellar disk diagram |
-| 7 | **Tonight's Best Observable Transits** | Queries NASA Exoplanet Archive for tonight's transits at your location, ranks them, and plots simulated light curves |
+| 1 | Title | Notebook header (markdown) |
+| 2 | **Imports & Parameters** | All imports + every tunable parameter — **run this first** |
+| 3 | Saturation & Photometry Calculator | Header (markdown) |
+| 4 | Core Photometry Functions | Saturation magnitude, max exposure, SNR, transit depth conversions |
+| 5 | SNR Model | Header with formula (markdown) |
+| 6 | SNR Overview Plots | Three diagnostic charts: SNR vs exposure time, SNR vs star magnitude, SNR vs sky brightness |
+| 7 | Simulated Transit Light Curve | Header (markdown) |
+| 8 | Simulated Transit Light Curve | Full limb-darkened transit simulation with photon noise, residuals panel, and stellar disk diagram |
+| 9 | Tonight's Best Observable Transits | Header (markdown) |
+| 10 | **Tonight's Best Observable Transits** | Queries NASA Exoplanet Archive for tonight's transits at your location, ranks them, and plots simulated light curves |
+| 11 | Tonight's Best Eclipsing Binaries | Header (markdown) |
+| 12 | **Tonight's Best Eclipsing Binaries & Compact-Object Systems** | Queries AAVSO VSX for EA/EB/EW stars + curated WD/NS/BH binaries; ranks and plots trapezoidal light curves |
 
 ## Example Output
 
 The notebook includes a worked example for **HAT-P-32 b** (mag 11.3, 2.22% depth), demonstrating that the Seestar S50 can detect the transit with stacked short exposures.
 
-The **Tonight's Transits** cell fetches live data from the [NASA Exoplanet Archive TAP service](https://exoplanetarchive.ipac.caltech.edu/TAP/sync) (no API key needed) and filters by altitude, magnitude range, and transit depth for your site.
+The **Tonight's Transits** cell (cell 10) fetches live data from the [NASA Exoplanet Archive TAP service](https://exoplanetarchive.ipac.caltech.edu/TAP/sync) (no API key needed) and filters by altitude, magnitude range, and transit depth for your site.
+
+The **Tonight's Eclipsing Binaries** cell (cell 12) queries the [AAVSO VSX API](https://www.aavso.org/vsx/) for eclipsing variables and always includes a curated set of compact-object binaries (Cyg X-1, HZ Her, V471 Tau, HW Vir, and others) regardless of live query results.
 
 ## License
 
