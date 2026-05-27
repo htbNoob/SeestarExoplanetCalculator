@@ -15,12 +15,14 @@ A Jupyter notebook for planning and simulating exoplanet transit observations wi
 ```
 numpy
 matplotlib
+astropy
+requests
 ```
 
 Install with:
 
 ```bash
-pip install numpy matplotlib
+pip install numpy matplotlib astropy requests
 ```
 
 ## Usage
