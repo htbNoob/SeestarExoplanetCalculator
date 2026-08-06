@@ -358,12 +358,20 @@ def page_tonight_transits():
         show_weather(dark_window)
 
         planets = cached_fetch_transiting_planets(bright_limit, faint_limit, min_depth)
+        if planets is None:
+            st.error("NASA Exoplanet Archive is currently unreachable (the service may be down or "
+                     "blocking requests) - please try again later.")
+            return
         st.write(f"{len(planets)} confirmed transiting planets in magnitude/depth range retrieved from archive.")
 
         if include_toi:
             toi_planets = cached_fetch_toi_candidates(bright_limit, faint_limit, min_depth)
-            st.write(f"{len(toi_planets)} unverified TOI candidates in range retrieved from ExoFOP/TOI table.")
-            planets = planets + toi_planets
+            if toi_planets is None:
+                st.warning("TESS Objects of Interest (ExoFOP/TOI) table unreachable - "
+                           "continuing with confirmed planets only.")
+            else:
+                st.write(f"{len(toi_planets)} unverified TOI candidates in range retrieved from ExoFOP/TOI table.")
+                planets = planets + toi_planets
 
         top = find_tonight_transits(planets, dark_window, min_alt, sky_mag_obs, n_top, instrument=instrument)
 
