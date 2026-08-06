@@ -1,21 +1,13 @@
-# SeestarExoplanetCalculator
+# Seestar Exoplanet Transit Observation Planner
 
-A Jupyter notebook for planning and simulating exoplanet transit observations with the **ZWO Seestar S50** smart telescope (50 mm aperture, f/5, Sony IMX462 sensor).
+A Streamlit web app for planning and simulating exoplanet transit (and eclipsing-binary) observations with the **ZWO Seestar S50** smart telescope (50 mm aperture, f/5, Sony IMX462 sensor).
 
-## Features
-
-- **Unified configuration cell** — all imports and every tunable parameter in a single cell (cell 2); run it once at startup to configure the entire notebook
-- **Saturation calculator** — find the brightest star magnitude a given exposure can handle before saturating the 12-bit sensor
-- **Max exposure estimator** — given a target magnitude, compute the longest safe exposure (with configurable safety margin)
-- **Full SNR model** — aperture-photometry SNR including shot noise, sky background, dark current, and read noise
-- **SNR overview plots** — three diagnostic charts: SNR vs exposure time, SNR vs star magnitude, and SNR vs sky brightness (Bortle scale)
-- **Simulated transit light curve** — physically-motivated, limb-darkened transit simulation with per-frame photon noise; produces a publication-style figure with residuals and a stellar disk diagram
-- **Tonight's best observable transits** — queries the NASA Exoplanet Archive TAP service live, filters by altitude, magnitude, and depth, ranks candidates, and plots simulated light curves for the top hits
-- **Tonight's best eclipsing binaries & compact-object systems** — queries AAVSO VSX for EA/EB/EW variables and checks a curated list of white-dwarf, neutron-star, and black-hole binaries; ranks by depth × SNR × coverage and plots trapezoidal simulated light curves
+Four interactive tools in one app (`app.py`), backed by a set of plain-Python calculation modules (`seestar_*.py`).
 
 ## Requirements
 
 ```
+streamlit
 numpy
 matplotlib
 astropy
@@ -25,61 +17,39 @@ requests
 Install with:
 
 ```bash
-pip install numpy matplotlib astropy requests
+pip install -r requirements.txt
 ```
 
-## Usage
+## Running the app
 
-Open `SeestarExoplanetCalculator.ipynb` in Jupyter or VS Code and **run cell 2 first** — it contains all imports and every tunable parameter. You only need to re-run cell 2 whenever you change a parameter.
+```bash
+streamlit run app.py
+```
 
-### All Parameters (cell 2)
+This opens the app in your browser (default `http://localhost:8501`). Use the sidebar to switch between the four tools below. Stop it with `Ctrl+C`.
 
-All configuration lives in cell 2. The key sections are:
+## The four tools
 
-**Simulated transit light curve (used by cell 8)**
+### 1. SNR Explorer
+SNR as a function of exposure time, star magnitude, and sky brightness, for the Seestar S50's aperture-photometry model (shot noise, sky background, dark current, read noise). Three linked panels, each with adjustable overlay values.
 
-| Parameter | Description |
-|-----------|-------------|
-| `STAR_MAG` | Host star V-band magnitude |
-| `K` | Planet-to-star radius ratio (Rp/Rs) |
-| `B_IMP` | Impact parameter (0 = central transit) |
-| `T14_H` | Total transit duration T₁₄ (hours) |
-| `U1`, `U2` | Quadratic limb-darkening coefficients |
-| `EXPOSURE_S` | Single-frame exposure time (seconds) |
-| `SKY_MAG` | Sky surface brightness (mag/arcsec²) |
+### 2. Light Curve Simulator
+Simulates a single-target transit light curve: limb-darkened stellar disk, per-frame photon noise, binned overlay, residuals panel, and a stellar-disk diagram showing the planet's path. Inputs: star magnitude, Rp/Rs, impact parameter, T₁₄, limb-darkening coefficients, exposure time, sky brightness, observation window, bin width, and random seed. Includes presets for HAT-P-32 b and HD 189733 b.
 
-**Tonight's best observable transits (used by cell 10)**
+### 3. Tonight's Best Observable Transits
+Queries the [NASA Exoplanet Archive TAP service](https://exoplanetarchive.ipac.caltech.edu/TAP/sync) live (no API key needed), filters by your site's altitude/magnitude/depth constraints, and ranks candidates by depth × SNR × sky coverage × altitude. Plots simulated light curves for the top hits.
 
-| Parameter | Description |
-|-----------|-------------|
-| `LAT` / `LON` / `ELEV_M` | Observer coordinates (decimal degrees, metres) |
-| `SITE_NAME` | Label for plot titles |
-| `MIN_ALT` | Minimum star altitude throughout the transit (°) |
-| `BRIGHT_LIMIT` / `FAINT_LIMIT` | V-magnitude window (saturation / SNR limits) |
-| `MIN_DEPTH` | Minimum transit depth to consider (%) |
-| `SKY_MAG_OBS` | Sky surface brightness — see table below |
-| `N_TOP` | How many top-ranked transits to display |
+Optionally include **unverified TOI candidates** (TESS Objects of Interest — the same catalog ExoFOP-TESS serves) alongside confirmed planets via a checkbox. These are flagged separately in the results table and plot titles, since their transit parameters are less certain and some will turn out to be false positives.
 
-**Tonight's best eclipsing binaries & compact-object systems (used by cell 12)**
+### 4. Tonight's Best Eclipsing Binaries & Compact-Object Systems
+Queries [AAVSO VSX](https://www.aavso.org/vsx/) for eclipsing-type variables (EA/EB/EW) in a cone around your zenith at local midnight, plus a curated list of white-dwarf, neutron-star, and black-hole binaries (V471 Tau, HW Vir, HZ Her, Cyg X-1, and others) that's included regardless of live query results. Ranks and plots trapezoidal eclipse models for the top systems.
 
-| Parameter | Description |
-|-----------|-------------|
-| `MIN_DEPTH_EB` | Minimum eclipse depth to consider (magnitudes) |
-| `MAX_PERIOD_EB` | Maximum orbital period (days) |
-| `MIN_ALT_EB` | Minimum star altitude throughout eclipse (°) |
-| `N_TOP_EB` | How many top-ranked systems to display |
-| `BIN_MIN_EB` | Bin width for the simulated light curve (minutes) |
+**Note:** the VSX query can take 1–2 minutes on dense fields — this is a known server-side limitation (see comments in `seestar_eb.py`), not an app bug.
 
-**Sky brightness guide (`SKY_MAG_OBS` / `SKY_MAG`):**
+### Observer site & local time
+Pages 3 & 4 share a site form (name, latitude, longitude, elevation, IANA timezone e.g. `Europe/Berlin`) persisted across both pages. "Tonight's dark window" is computed as the time the sun is below −12° (nautical twilight) at your site, shown in both UTC and your local timezone.
 
-| Value | Bortle class | Typical location |
-|-------|-------------|-----------------|
-| 17.0 | 9 | Inner city |
-| 18.5 | 7 | Suburban |
-| 20.5 | 4–5 | Rural / suburban border |
-| 21.7 | 1–2 | Truly dark site |
-
-## Instrument Constants (Seestar S50 / IMX462)
+## Instrument constants (Seestar S50 / IMX462)
 
 | Parameter | Value |
 |-----------|-------|
@@ -92,30 +62,28 @@ All configuration lives in cell 2. The key sections are:
 | Gain | ~1.5 e⁻/ADU |
 | QE | ~80% (STARVIS estimate) |
 
-## Cells at a Glance
+## Sky brightness guide
 
-| # | Title | What it does |
-|---|-------|-------------|
-| 1 | Title | Notebook header (markdown) |
-| 2 | **Imports & Parameters** | All imports + every tunable parameter — **run this first** |
-| 3 | Saturation & Photometry Calculator | Header (markdown) |
-| 4 | Core Photometry Functions | Saturation magnitude, max exposure, SNR, transit depth conversions |
-| 5 | SNR Model | Header with formula (markdown) |
-| 6 | SNR Overview Plots | Three diagnostic charts: SNR vs exposure time, SNR vs star magnitude, SNR vs sky brightness |
-| 7 | Simulated Transit Light Curve | Header (markdown) |
-| 8 | Simulated Transit Light Curve | Full limb-darkened transit simulation with photon noise, residuals panel, and stellar disk diagram |
-| 9 | Tonight's Best Observable Transits | Header (markdown) |
-| 10 | **Tonight's Best Observable Transits** | Queries NASA Exoplanet Archive for tonight's transits at your location, ranks them, and plots simulated light curves |
-| 11 | Tonight's Best Eclipsing Binaries | Header (markdown) |
-| 12 | **Tonight's Best Eclipsing Binaries & Compact-Object Systems** | Queries AAVSO VSX for EA/EB/EW stars + curated WD/NS/BH binaries; ranks and plots trapezoidal light curves |
+Used for the "sky brightness" inputs throughout the app:
 
-## Example Output
+| Value (mag/arcsec²) | Bortle class | Typical location |
+|----------------------|---------------|-------------------|
+| 17.0 | 9 | Inner city |
+| 18.5 | 7 | Suburban |
+| 20.5 | 4–5 | Rural / suburban border |
+| 21.7 | 1–2 | Truly dark site |
 
-The notebook includes a worked example for **HAT-P-32 b** (mag 11.3, 2.22% depth), demonstrating that the Seestar S50 can detect the transit with stacked short exposures.
+## Code layout
 
-The **Tonight's Transits** cell (cell 10) fetches live data from the [NASA Exoplanet Archive TAP service](https://exoplanetarchive.ipac.caltech.edu/TAP/sync) (no API key needed) and filters by altitude, magnitude range, and transit depth for your site.
-
-The **Tonight's Eclipsing Binaries** cell (cell 12) queries the [AAVSO VSX API](https://www.aavso.org/vsx/) for eclipsing variables and always includes a curated set of compact-object binaries (Cyg X-1, HZ Her, V471 Tau, HW Vir, and others) regardless of live query results.
+| File | Contents |
+|------|----------|
+| `app.py` | Streamlit UI — page routing, forms, cached network calls |
+| `seestar_core.py` | Instrument constants + pure physics functions (saturation, SNR, mag↔depth conversions) — no I/O |
+| `seestar_site.py` | Observer site, tonight's dark-window computation, UTC↔local time formatting |
+| `seestar_snr.py` | SNR overview plot |
+| `seestar_lightcurve.py` | Single-target transit simulator |
+| `seestar_transits.py` | NASA Exoplanet Archive query (confirmed planets + TOI candidates), ranking, and plotting |
+| `seestar_eb.py` | AAVSO VSX query, curated compact-object list, ranking, and plotting |
 
 ## License
 
