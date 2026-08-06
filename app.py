@@ -236,6 +236,18 @@ LIGHTCURVE_PRESETS = {
     # Famous inspiraling/tidally-disrupting hot Jupiter; Dec +29.7.
     "Qatar-1 b": dict(star_mag=12.69, k=0.1463, b_imp=0.645, t14_h=1.66, u1=0.30, u2=0.28),
     # Deep (~2.1%) transit, circumpolar from mid-northern latitudes at Dec +65.
+    "GJ 486 b": dict(star_mag=11.39, k=0.0372, b_imp=0.120, t14_h=1.016, u1=0.30, u2=0.28),
+    # Earth-sized (1.3 Re) rocky planet, bright M dwarf host; Dec +9.8 (~50 deg max alt from Frankfurt).
+    "K2-18 b": dict(star_mag=13.48, k=0.0538, b_imp=0.65, t14_h=2.97, u1=0.30, u2=0.28),
+    # Habitable-zone sub-Neptune (JWST H2O/DMS target); Dec +7.6, well placed from mid-north.
+    "LTT 1445 A b": dict(star_mag=11.22, k=0.0451, b_imp=0.17, t14_h=1.37, u1=0.30, u2=0.28),
+    # Closest Earth-sized (1.3 Re) transiting rocky planet; Dec -16.3, low but reachable.
+    "GJ 1214 b": dict(star_mag=14.71, k=0.1159, b_imp=0.264, t14_h=0.870, u1=0.30, u2=0.28),
+    # Classic amateur-reachable sub-Neptune, deep 1.3% transit; Dec +4.9.
+    "TRAPPIST-1 b": dict(star_mag=18.80, k=0.0859, b_imp=0.095, t14_h=0.601, u1=0.30, u2=0.28),
+    # Innermost of 7 Earth-sized planets; very faint in V (use I band in practice), Dec -5.0.
+    "TRAPPIST-1 c": dict(star_mag=18.80, k=0.0844, b_imp=0.109, t14_h=0.701, u1=0.30, u2=0.28),
+    # Earth-sized, same ultracool dwarf host as TRAPPIST-1 b; short (42 min) transit.
 }
 
 
