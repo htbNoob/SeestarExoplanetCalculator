@@ -170,20 +170,29 @@ def site_form(key_prefix: str) -> Site:
     preset_key = f"{key_prefix}_preset"
     options = list(PRESET_SITES.keys()) + [MANUAL_OPTION]
 
+    # Seed each widget's session-state value once; afterwards the key alone owns the
+    # value (via direct edits or _apply_preset), so widgets below must not also pass
+    # `value=` - doing both trips Streamlit's "value set via Session State API" warning.
+    st.session_state.setdefault(f"{key_prefix}_name", site.name)
+    st.session_state.setdefault(f"{key_prefix}_lat", site.lat)
+    st.session_state.setdefault(f"{key_prefix}_lon", site.lon)
+    st.session_state.setdefault(f"{key_prefix}_elev", float(site.elev_m))
+    st.session_state.setdefault(f"{key_prefix}_tz", site.tz)
+
     with st.expander("Observer site", expanded=True):
         st.selectbox("Observatory", options, key=preset_key,
                      on_change=_apply_preset, args=(key_prefix, preset_key))
         is_manual = st.session_state[preset_key] == MANUAL_OPTION
 
         c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1.4])
-        name = c1.text_input("Site name", value=site.name, key=f"{key_prefix}_name", disabled=not is_manual)
-        lat = c2.number_input("Latitude (deg N)", value=site.lat, min_value=-90.0, max_value=90.0,
+        name = c1.text_input("Site name", key=f"{key_prefix}_name", disabled=not is_manual)
+        lat = c2.number_input("Latitude (deg N)", min_value=-90.0, max_value=90.0,
                                format="%.4f", key=f"{key_prefix}_lat", disabled=not is_manual)
-        lon = c3.number_input("Longitude (deg E)", value=site.lon, min_value=-180.0, max_value=180.0,
+        lon = c3.number_input("Longitude (deg E)", min_value=-180.0, max_value=180.0,
                                format="%.4f", key=f"{key_prefix}_lon", disabled=not is_manual)
-        elev = c4.number_input("Elevation (m)", value=float(site.elev_m), min_value=-500.0,
+        elev = c4.number_input("Elevation (m)", min_value=-500.0,
                                 max_value=9000.0, key=f"{key_prefix}_elev", disabled=not is_manual)
-        tz = c5.text_input("Timezone (IANA)", value=site.tz, key=f"{key_prefix}_tz",
+        tz = c5.text_input("Timezone (IANA)", key=f"{key_prefix}_tz",
                             disabled=not is_manual,
                             help="e.g. Europe/Berlin, America/Los_Angeles, Asia/Tokyo. "
                                  "Used only to display local times alongside UTC.")
@@ -326,7 +335,8 @@ def page_tonight_transits():
     bright_limit = c1.number_input("Bright limit (V mag, may saturate below)", value=5.5, format="%.1f")
     faint_limit = c2.number_input("Faint limit (V mag, poor SNR above)", value=10.5, format="%.1f")
     min_depth = c2.number_input("Min. transit depth (%)", value=1.5, min_value=0.0, format="%.2f")
-    sky_mag_obs = c3.number_input("Sky brightness at your site (mag/arcsec2)", value=site.sky_mag,
+    st.session_state.setdefault("transits_sky_mag", site.sky_mag)
+    sky_mag_obs = c3.number_input("Sky brightness at your site (mag/arcsec2)",
                                    format="%.2f", key="transits_sky_mag",
                                    help="Prefilled from the preset observatory; edit freely for tonight's actual "
                                         "conditions (moon phase, haze, etc).")
@@ -415,7 +425,8 @@ def page_tonight_eb():
                                  "~45-50 deg cones on dense fields.")
     bright_limit_eb = c1.number_input("Bright limit (V mag)", value=5.0, format="%.1f")
     faint_limit_eb = c2.number_input("Faint limit (V mag)", value=13.0, format="%.1f")
-    sky_mag_obs_eb = c3.number_input("Sky brightness at your site (mag/arcsec2)", value=site.sky_mag,
+    st.session_state.setdefault("eb_sky_mag", site.sky_mag)
+    sky_mag_obs_eb = c3.number_input("Sky brightness at your site (mag/arcsec2)",
                                       format="%.2f", key="eb_sky_mag",
                                       help="Prefilled from the preset observatory; edit freely for tonight's "
                                            "actual conditions (moon phase, haze, etc).")
