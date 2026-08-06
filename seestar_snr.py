@@ -2,7 +2,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from seestar_core import calculate_max_exposure, calculate_saturation_magnitude, snr_full
+from seestar_core import SEESTAR, calculate_max_exposure, calculate_saturation_magnitude, snr_full
 
 BORTLE_LABELS = {17.0: "Bortle 9\n(inner city)", 18.5: "Bortle 7",
                   20.5: "Bortle 4-5", 21.7: "Bortle 1-2\n(dark)"}
@@ -10,10 +10,13 @@ BORTLE_LABELS = {17.0: "Bortle 9\n(inner city)", 18.5: "Bortle 7",
 
 def build_snr_overview_figure(ref_sky=20.5, star_mags=(8, 10, 12, 13, 14, 15),
                                exp_times=(1, 5, 10, 30, 60, 120),
-                               exp_fixed=10, star_mags3=(8, 10, 12, 13, 14, 15)):
+                               exp_fixed=10, star_mags3=(8, 10, 12, 13, 14, 15),
+                               instrument=SEESTAR):
     """Reproduces the notebook's 3-panel SNR overview, parameterized for the UI."""
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    fig.suptitle("Seestar S50 - SNR Overview (IMX462, 50 mm, f/5)", fontsize=13, fontweight="bold")
+    fig.suptitle(f"{instrument.name} - SNR Overview "
+                 f"({instrument.ota.aperture_mm:.0f} mm, f/{instrument.ota.f_ratio:.1f})",
+                 fontsize=13, fontweight="bold")
 
     colors = plt.cm.plasma_r(np.linspace(0.15, 0.85, max(len(star_mags), 1)))
 
@@ -21,8 +24,8 @@ def build_snr_overview_figure(ref_sky=20.5, star_mags=(8, 10, 12, 13, 14, 15),
     ax1 = axes[0]
     t_arr = np.logspace(-1, 3, 400)
     for i, mag in enumerate(star_mags):
-        snr_arr = snr_full(mag, t_arr, sky_mag_arcsec2=ref_sky)
-        sat_t = calculate_max_exposure(mag)
+        snr_arr = snr_full(mag, t_arr, sky_mag_arcsec2=ref_sky, instrument=instrument)
+        sat_t = calculate_max_exposure(mag, instrument)
         mask = t_arr <= sat_t
         ax1.loglog(t_arr[mask], snr_arr[mask], color=colors[i], lw=2, label=f"mag {mag}")
         if np.any(~mask):
@@ -40,8 +43,8 @@ def build_snr_overview_figure(ref_sky=20.5, star_mags=(8, 10, 12, 13, 14, 15),
     mag_arr = np.linspace(5, 16, 300)
     colors2 = plt.cm.viridis(np.linspace(0.1, 0.9, max(len(exp_times), 1)))
     for i, exp in enumerate(exp_times):
-        snr_arr = snr_full(mag_arr, exp, sky_mag_arcsec2=ref_sky)
-        sat_mag_limit = calculate_saturation_magnitude(exp)
+        snr_arr = snr_full(mag_arr, exp, sky_mag_arcsec2=ref_sky, instrument=instrument)
+        sat_mag_limit = calculate_saturation_magnitude(exp, instrument)
         mask = mag_arr >= sat_mag_limit
         ax2.semilogy(mag_arr[mask], snr_arr[mask], color=colors2[i], lw=2, label=f"{exp} s")
     ax2.axhline(100, color="gray", ls="--", lw=1, alpha=0.7, label="SNR = 100")
@@ -60,7 +63,8 @@ def build_snr_overview_figure(ref_sky=20.5, star_mags=(8, 10, 12, 13, 14, 15),
         ax3.axvline(sky_b, color="lightgray", lw=0.8, ls=":")
         ax3.text(sky_b + 0.05, 1.5, label, fontsize=6, color="gray", va="bottom")
     for i, mag in enumerate(star_mags3):
-        snr_arr = np.array([snr_full(mag, exp_fixed, sky_mag_arcsec2=s) for s in sky_arr])
+        snr_arr = np.array([snr_full(mag, exp_fixed, sky_mag_arcsec2=s, instrument=instrument)
+                             for s in sky_arr])
         ax3.semilogy(sky_arr, snr_arr, color=colors3[i], lw=2, label=f"mag {mag}")
     ax3.axhline(100, color="gray", ls="--", lw=1, alpha=0.7, label="SNR = 100")
     ax3.set_xlabel("Sky brightness (mag/arcsec2)  ->  darker")

@@ -12,7 +12,7 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 import astropy.units as u
 
-from seestar_core import calculate_max_exposure, snr_full
+from seestar_core import SEESTAR, calculate_max_exposure, snr_full
 from seestar_site import DarkWindow, local_iso, min_altitude_deg
 
 VSX_URL = "https://www.aavso.org/vsx/index.php"
@@ -167,7 +167,8 @@ def find_tonight_eclipses(vsx_rows: List[tuple], dark_window: DarkWindow,
                            min_depth_eb: float, max_period_eb: float,
                            min_dur_eb: float, max_dur_eb: float, min_alt_eb: float,
                            sky_mag_obs: float, n_top: int = 10,
-                           include_compact_systems: bool = True) -> List[EclipseCandidate]:
+                           include_compact_systems: bool = True,
+                           instrument=SEESTAR) -> List[EclipseCandidate]:
     """Filter/rank tonight's observable eclipses from VSX rows + curated
     compact-object systems against a computed dark window."""
     obs_loc = dark_window.obs_loc
@@ -203,8 +204,8 @@ def find_tonight_eclipses(vsx_rows: List[tuple], dark_window: DarkWindow,
                 continue
 
             frac = (ot1 - ot0) / (t4j - t1j)
-            exp = max(1.0, min(calculate_max_exposure(vmag) * 0.8, 60.0))
-            snr5 = snr_full(vmag, exp, sky_mag_arcsec2=sky_mag_obs) * np.sqrt(300.0 / exp)
+            exp = max(1.0, min(calculate_max_exposure(vmag, instrument) * 0.8, 60.0))
+            snr5 = snr_full(vmag, exp, sky_mag_arcsec2=sky_mag_obs, instrument=instrument) * np.sqrt(300.0 / exp)
             dep_frac = 1.0 - 10 ** (-0.4 * depth_mag)
             score = dep_frac * min(snr5, 1000) / 100 * frac * np.sin(np.radians(alt))
 
@@ -237,7 +238,7 @@ def trap_model(t_h_arr, half_dur_h, dep, ing_h):
 
 def build_eb_figures(top: List[EclipseCandidate], dark_window: DarkWindow,
                       sky_mag_obs: float, bin_min_eb: float = 0.5,
-                      seed: int = 42) -> Optional[plt.Figure]:
+                      seed: int = 42, instrument=SEESTAR) -> Optional[plt.Figure]:
     """Simulate + plot predicted (trapezoidal) eclipse curves for ranked candidates."""
     if not top:
         return None
@@ -248,7 +249,7 @@ def build_eb_figures(top: List[EclipseCandidate], dark_window: DarkWindow,
     fig, axes = plt.subplots(n_eb, 1, figsize=(14, 3.4 * n_eb), squeeze=False)
     axes = axes.ravel()
     fig.suptitle(
-        f"Predicted Eclipses Tonight - {dark_window.site.name}\n"
+        f"Predicted Eclipses Tonight - {dark_window.site.name} ({instrument.name})\n"
         f"Dark window: {dark_window.dark_start.utc.iso[:16]} -> {dark_window.dark_end.utc.iso[:16]} UTC  "
         f"({local_iso(dark_window.dark_start, dark_window.site.tz)} -> "
         f"{local_iso(dark_window.dark_end, dark_window.site.tz)} {dark_window.site.tz})",
@@ -267,7 +268,7 @@ def build_eb_figures(top: List[EclipseCandidate], dark_window: DarkWindow,
 
         flux_m = trap_model(t_h, half_dur, dep, ing_h)
 
-        sigma = 1.0 / snr_full(vmag, exp, sky_mag_arcsec2=sky_mag_obs)
+        sigma = 1.0 / snr_full(vmag, exp, sky_mag_arcsec2=sky_mag_obs, instrument=instrument)
         flux_o = flux_m + rng_eb.normal(0.0, sigma, n_f)
 
         b_edges = np.arange(t_m[0], t_m[-1] + bin_min_eb, bin_min_eb)

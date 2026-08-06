@@ -11,7 +11,7 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 import astropy.units as u
 
-from seestar_core import calculate_max_exposure, snr_full
+from seestar_core import SEESTAR, calculate_max_exposure, snr_full
 from seestar_site import DarkWindow, local_iso, min_altitude_deg
 
 ARCHIVE_URL = "https://exoplanetarchive.ipac.caltech.edu/TAP/sync"
@@ -138,7 +138,8 @@ class TransitCandidate:
 
 
 def find_tonight_transits(planets: List[dict], dark_window: DarkWindow,
-                           min_alt: float, sky_mag_obs: float, n_top: int = 5) -> List[TransitCandidate]:
+                           min_alt: float, sky_mag_obs: float, n_top: int = 5,
+                           instrument=SEESTAR) -> List[TransitCandidate]:
     """Filter/rank tonight's observable transits from a planet list (see
     `fetch_transiting_planets`) against a computed dark window."""
     obs_loc = dark_window.obs_loc
@@ -170,8 +171,8 @@ def find_tonight_transits(planets: List[dict], dark_window: DarkWindow,
                 continue
 
             frac = (ot1 - ot0) / (t4j - t1j)
-            exp = max(1.0, min(calculate_max_exposure(vmag) * 0.8, 60.0))
-            snr5 = snr_full(vmag, exp, sky_mag_arcsec2=sky_mag_obs) * np.sqrt(300.0 / exp)
+            exp = max(1.0, min(calculate_max_exposure(vmag, instrument) * 0.8, 60.0))
+            snr5 = snr_full(vmag, exp, sky_mag_arcsec2=sky_mag_obs, instrument=instrument) * np.sqrt(300.0 / exp)
             dep_pct = dep
             score = dep_pct * min(snr5, 1000) / 100 * frac * np.sin(np.radians(alt))
 
@@ -192,7 +193,8 @@ def find_tonight_transits(planets: List[dict], dark_window: DarkWindow,
 
 
 def build_transit_figures(top: List[TransitCandidate], dark_window: DarkWindow,
-                           sky_mag_obs: float, bin_min: float = 5.0, seed: int = 42) -> Optional[plt.Figure]:
+                           sky_mag_obs: float, bin_min: float = 5.0, seed: int = 42,
+                           instrument=SEESTAR) -> Optional[plt.Figure]:
     """Simulate + plot predicted light curves for the ranked candidates."""
     if not top:
         return None
@@ -213,7 +215,7 @@ def build_transit_figures(top: List[TransitCandidate], dark_window: DarkWindow,
     fig, axes = plt.subplots(n_tp, 1, figsize=(14, 3.6 * n_tp), squeeze=False)
     axes = axes.ravel()
     fig.suptitle(
-        f"Predicted Transits Tonight - {dark_window.site.name}\n"
+        f"Predicted Transits Tonight - {dark_window.site.name} ({instrument.name})\n"
         f"Dark window: {dark_window.dark_start.utc.iso[:16]} -> {dark_window.dark_end.utc.iso[:16]} UTC  "
         f"({local_iso(dark_window.dark_start, dark_window.site.tz)} -> "
         f"{local_iso(dark_window.dark_end, dark_window.site.tz)} {dark_window.site.tz})",
@@ -243,7 +245,7 @@ def build_transit_figures(top: List[TransitCandidate], dark_window: DarkWindow,
             blk = np.sum(I_d[:, :, None] * (d2 <= k ** 2), axis=(0, 1))
             flux_m[i0:i0 + batch] = 1.0 - blk / I_dt
 
-        sigma = 1.0 / snr_full(vmag, exp, sky_mag_arcsec2=sky_mag_obs)
+        sigma = 1.0 / snr_full(vmag, exp, sky_mag_arcsec2=sky_mag_obs, instrument=instrument)
         flux_o = flux_m + rng.normal(0.0, sigma, n_f)
 
         b_edges = np.arange(t_m[0], t_m[-1] + bin_min, bin_min)

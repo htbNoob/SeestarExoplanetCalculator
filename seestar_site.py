@@ -17,7 +17,8 @@ class Site:
     lat: float   # degrees, +N
     lon: float   # degrees, +E
     elev_m: float = 0.0
-    tz: str = "UTC"   # IANA timezone name (e.g. "Europe/Berlin"), for display only
+    tz: str = "UTC"        # IANA timezone name (e.g. "Europe/Berlin"), for display only
+    sky_mag: float = 18.0  # typical sky brightness (mag/arcsec^2), used to prefill the UI
 
 
 @dataclass

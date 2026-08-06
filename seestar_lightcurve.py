@@ -5,7 +5,7 @@ import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
 
-from seestar_core import calculate_max_exposure, snr_full, transit_depth_to_magnitude
+from seestar_core import SEESTAR, calculate_max_exposure, snr_full, transit_depth_to_magnitude
 
 
 @dataclass
@@ -28,7 +28,7 @@ class LightCurveResult:
 
 
 def simulate_transit(star_mag, k, b_imp, t14_h, u1, u2, exposure_s, sky_mag,
-                      obs_hours, bin_min, seed=42) -> LightCurveResult:
+                      obs_hours, bin_min, seed=42, instrument=SEESTAR) -> LightCurveResult:
     """Simulate and plot a transit light curve for a single target.
 
     Parameters mirror the notebook's cell-7 globals (STAR_MAG, K, B_IMP,
@@ -40,7 +40,7 @@ def simulate_transit(star_mag, k, b_imp, t14_h, u1, u2, exposure_s, sky_mag,
     t23_h = t14_h * np.sqrt(max(0.0, (1 - k) ** 2 - b_imp ** 2)) / denom
     ingress_m = (t14_h - t23_h) / 2 * 60
 
-    snr_frame = snr_full(star_mag, exposure_s, sky_mag_arcsec2=sky_mag)
+    snr_frame = snr_full(star_mag, exposure_s, sky_mag_arcsec2=sky_mag, instrument=instrument)
     sigma_flux = 1.0 / snr_frame
     depth_mmag = transit_depth_to_magnitude(depth) * 1000
 
@@ -98,7 +98,7 @@ def simulate_transit(star_mag, k, b_imp, t14_h, u1, u2, exposure_s, sky_mag,
     # ---- Figure ----
     fig = plt.figure(figsize=(16, 8))
     fig.suptitle(
-        f"Simulated Transit - Seestar S50  |  "
+        f"Simulated Transit - {instrument.name}  |  "
         f"Star mag {star_mag},  K = {k:.3f} ({depth * 100:.2f}% depth),  "
         f"b = {b_imp},  T14 = {t14_h:.1f} h,  "
         f"t_exp = {exposure_s:.0f} s,  sky = {sky_mag} mag/arcsec2",
@@ -180,7 +180,7 @@ def simulate_transit(star_mag, k, b_imp, t14_h, u1, u2, exposure_s, sky_mag,
         snr_per_frame=snr_frame,
         noise_per_frame_mmag=sigma_flux * 1e3,
         depth_over_sigma=depth_mmag / (sigma_flux * 1e3),
-        max_safe_exposure_s=calculate_max_exposure(star_mag),
+        max_safe_exposure_s=calculate_max_exposure(star_mag, instrument),
         frames_in_transit=n_in,
         bins_in_transit=n_bin_in,
         binned_sigma_mmag=binned_sigma_mmag,

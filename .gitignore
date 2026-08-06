@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.claude/
+
+HAT-P-32_b.png
+HD_189733_b.png

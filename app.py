@@ -14,6 +14,7 @@ matplotlib.use("Agg")
 
 import streamlit as st
 
+from seestar_core import SEESTAR_CAMERA, SEESTAR_OTA, Camera, Instrument, OTA
 from seestar_eb import build_eb_figures, find_tonight_eclipses, query_vsx, vsx_cone_for_site
 from seestar_lightcurve import simulate_transit
 from seestar_site import Site, compute_dark_window, is_valid_tz, local_iso
@@ -24,14 +25,86 @@ from seestar_transits import (
     fetch_transiting_planets,
     find_tonight_transits,
 )
+from seestar_weather import build_weather_figure, fetch_hourly_forecast, summarize_dark_window_weather
 
 st.set_page_config(page_title="Seestar Exoplanet Planner", layout="wide")
 
-DEFAULT_SITE = Site(name="Frankfurt am Main, Germany", lat=50.0853, lon=8.5822, elev_m=100,
-                     tz="Europe/Berlin")
+MANUAL_OPTION = "Manual (custom location)"
+
+PRESET_SITES = {
+    "Frankfurt am Main, Germany": Site(
+        name="Frankfurt am Main, Germany", lat=50.0853, lon=8.5822, elev_m=100,
+        tz="Europe/Berlin", sky_mag=18.0),
+    "Taunus Observatory (Kleiner Feldberg)": Site(
+        name="Taunus Observatory (Kleiner Feldberg)", lat=50.2217, lon=8.4458, elev_m=826,
+        tz="Europe/Berlin", sky_mag=20.8),    # Bortle 4
+    "Teide Observatory, Tenerife": Site(
+        name="Teide Observatory, Tenerife", lat=28.3000, lon=-16.5097, elev_m=2390,
+        tz="Atlantic/Canary", sky_mag=21.59),  # Bortle 4
+    "Madrona Peak Observatory": Site(
+        name="Madrona Peak Observatory", lat=29.8442, lon=-99.3558, elev_m=379,
+        tz="America/Chicago", sky_mag=21.89),  # Bortle 2
+}
+DEFAULT_PRESET = "Frankfurt am Main, Germany"
+DEFAULT_SITE = PRESET_SITES[DEFAULT_PRESET]
 
 if "site" not in st.session_state:
     st.session_state.site = DEFAULT_SITE
+
+# =============================================================================
+# Instrument presets (optical tube x camera, picked independently)
+#
+# Specs marked "est." below aren't in the source spec sheets and are
+# estimated (from manufacturer literature or self-consistent from full
+# well / bit depth) - worth confirming against your own calibration frames.
+# =============================================================================
+OTA_PRESETS = {
+    "Seestar S50": SEESTAR_OTA,
+    "Taunus Westkuppel (PlaneWave CDK12.5, f/8)": OTA(
+        name="Taunus Westkuppel CDK12.5", aperture_mm=317.5, focal_length_mm=2531.0),
+    "Taunus Ostkuppel 60cm (primary focus, f/3.3)": OTA(
+        name="Taunus Ostkuppel 60cm (primary)", aperture_mm=600.0, focal_length_mm=2000.0),
+    "Taunus Ostkuppel 60cm (secondary focus, f/10)": OTA(
+        name="Taunus Ostkuppel 60cm (secondary)", aperture_mm=600.0, focal_length_mm=6000.0),
+    "MPO61 RCOS 610 24\" (f/7.9)": OTA(
+        name="MPO61 RCOS 610", aperture_mm=609.6, focal_length_mm=4814.0),
+}
+
+CAMERA_PRESETS = {
+    "Seestar Sony IMX462": SEESTAR_CAMERA,
+    "Atik 383L+ (KAF-8300 CCD)": Camera(
+        name="Atik 383L+", pixel_size_um=5.4, full_well_e=25500, read_noise_e=8.5,
+        dark_current_e_s=0.02, qe=0.5, gain_e_per_adu=0.39, bit_depth=16),
+        # full_well/read_noise: midpoints of Atik's published 25000-26000e-/7-10e- ranges.
+        # dark_current, gain: est. (cooled CCD typical / full_well / 2^16).
+    "Moravian C3-61000 (Sony IMX455 CMOS)": Camera(
+        name="Moravian C3-61000", pixel_size_um=3.76, full_well_e=50000, read_noise_e=2.0,
+        dark_current_e_s=0.001, qe=0.85, gain_e_per_adu=0.76, bit_depth=16),
+        # read_noise/qe: midpoints of Moravian's published 1-3e-/80-90% ranges.
+        # dark_current, gain: est. (cooled BSI CMOS typical / full_well / 2^16).
+    "QHY461PH (MPO61)": Camera(
+        name="QHY461PH", pixel_size_um=3.76, full_well_e=75600, read_noise_e=3.5,
+        dark_current_e_s=0.0005, qe=0.85, gain_e_per_adu=1.26, bit_depth=16),
+        # full_well = linearitylimit(60000 ADU) x gain(1.26 e-/ADU) from MPO61's own config.
+        # read_noise, dark_current, qe: est. (QHYCCD lit. quotes 1-3.7e- read noise by gain mode).
+}
+DEFAULT_OTA = "Seestar S50"
+DEFAULT_CAMERA = "Seestar Sony IMX462"
+
+
+def instrument_form(key_prefix: str) -> Instrument:
+    with st.expander("Instrument", expanded=True):
+        c1, c2 = st.columns(2)
+        ota_name = c1.selectbox("Optical tube", list(OTA_PRESETS.keys()), key=f"{key_prefix}_ota")
+        cam_name = c2.selectbox("Camera", list(CAMERA_PRESETS.keys()), key=f"{key_prefix}_cam")
+        instrument = Instrument(ota=OTA_PRESETS[ota_name], camera=CAMERA_PRESETS[cam_name])
+        st.caption(
+            f"{instrument.ota.aperture_mm:.0f} mm aperture, f/{instrument.ota.f_ratio:.1f}  |  "
+            f"{instrument.pixel_scale_arcsec:.2f}\"/px  |  QE {instrument.camera.qe * 100:.0f}%  |  "
+            f"read noise {instrument.camera.read_noise_e:.1f} e-  |  "
+            f"full well {instrument.camera.full_well_e:.0f} e-"
+        )
+    return instrument
 
 
 # =============================================================================
@@ -52,21 +125,66 @@ def cached_query_vsx(ra_center, dec_center, radius_deg, bright_limit, faint_limi
     return query_vsx(ra_center, dec_center, radius_deg, bright_limit, faint_limit)
 
 
+@st.cache_data(ttl=1800, show_spinner="Fetching weather forecast (Open-Meteo)...")
+def cached_fetch_hourly_forecast(lat, lon):
+    return fetch_hourly_forecast(lat, lon)
+
+
+def show_weather(dark_window):
+    """Fetch + display the cloud cover / precipitation / temperature forecast
+    for tonight's dark window. Shared by the transits and EB pages."""
+    forecast = cached_fetch_hourly_forecast(dark_window.site.lat, dark_window.site.lon)
+    summary = summarize_dark_window_weather(forecast, dark_window)
+    st.subheader("Weather forecast")
+    if summary is None:
+        st.info("No forecast hours fall within tonight's dark window.")
+        return
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Conditions", summary.rating)
+    m2.metric("Mean cloud cover", f"{summary.mean_cloudcover:.0f}%", f"max {summary.max_cloudcover:.0f}%")
+    m3.metric("Mean precip. probability", f"{summary.mean_precip_prob:.0f}%")
+    m4.metric("Min. temp / max wind", f"{summary.min_temperature_c:.0f} C / {summary.max_windspeed_kmh:.0f} km/h")
+    st.caption("Rating: Good = <20% mean cloud cover & <20% precip. probability during the dark window; "
+               "Fair = <60% cloud & <40% precip.; otherwise Poor. Forecast: Open-Meteo, updated every 30 min.")
+    st.pyplot(build_weather_figure(forecast, dark_window))
+
+
 # =============================================================================
 # Site input widget, shared by pages 3 & 4
 # =============================================================================
+def _apply_preset(key_prefix: str, preset_key: str):
+    choice = st.session_state[preset_key]
+    if choice == MANUAL_OPTION:
+        return
+    preset = PRESET_SITES[choice]
+    st.session_state[f"{key_prefix}_name"] = preset.name
+    st.session_state[f"{key_prefix}_lat"] = preset.lat
+    st.session_state[f"{key_prefix}_lon"] = preset.lon
+    st.session_state[f"{key_prefix}_elev"] = float(preset.elev_m)
+    st.session_state[f"{key_prefix}_tz"] = preset.tz
+    st.session_state[f"{key_prefix}_sky_mag"] = preset.sky_mag
+
+
 def site_form(key_prefix: str) -> Site:
     site = st.session_state.site
+    preset_key = f"{key_prefix}_preset"
+    options = list(PRESET_SITES.keys()) + [MANUAL_OPTION]
+
     with st.expander("Observer site", expanded=True):
+        st.selectbox("Observatory", options, key=preset_key,
+                     on_change=_apply_preset, args=(key_prefix, preset_key))
+        is_manual = st.session_state[preset_key] == MANUAL_OPTION
+
         c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1.4])
-        name = c1.text_input("Site name", value=site.name, key=f"{key_prefix}_name")
+        name = c1.text_input("Site name", value=site.name, key=f"{key_prefix}_name", disabled=not is_manual)
         lat = c2.number_input("Latitude (deg N)", value=site.lat, min_value=-90.0, max_value=90.0,
-                               format="%.4f", key=f"{key_prefix}_lat")
+                               format="%.4f", key=f"{key_prefix}_lat", disabled=not is_manual)
         lon = c3.number_input("Longitude (deg E)", value=site.lon, min_value=-180.0, max_value=180.0,
-                               format="%.4f", key=f"{key_prefix}_lon")
+                               format="%.4f", key=f"{key_prefix}_lon", disabled=not is_manual)
         elev = c4.number_input("Elevation (m)", value=float(site.elev_m), min_value=-500.0,
-                                max_value=9000.0, key=f"{key_prefix}_elev")
+                                max_value=9000.0, key=f"{key_prefix}_elev", disabled=not is_manual)
         tz = c5.text_input("Timezone (IANA)", value=site.tz, key=f"{key_prefix}_tz",
+                            disabled=not is_manual,
                             help="e.g. Europe/Berlin, America/Los_Angeles, Asia/Tokyo. "
                                  "Used only to display local times alongside UTC.")
         if not is_valid_tz(tz):
@@ -81,8 +199,10 @@ def site_form(key_prefix: str) -> Site:
 # =============================================================================
 def page_snr_explorer():
     st.header("SNR Explorer")
-    st.caption("SNR as a function of exposure time, star magnitude, and sky brightness "
-               "(Seestar S50, 50 mm f/5, IMX462).")
+    st.caption("SNR as a function of exposure time, star magnitude, and sky brightness, "
+               "for the selected instrument.")
+
+    instrument = instrument_form("snr")
 
     c1, c2, c3 = st.columns(3)
     ref_sky = c1.slider("Sky brightness for panels 1 & 2 (mag/arcsec2)", 16.0, 22.0, 20.5, 0.1)
@@ -97,7 +217,7 @@ def page_snr_explorer():
     exp_times = sorted(exp_times) or [10]
 
     fig = build_snr_overview_figure(ref_sky=ref_sky, star_mags=star_mags, exp_times=exp_times,
-                                     exp_fixed=exp_fixed, star_mags3=star_mags)
+                                     exp_fixed=exp_fixed, star_mags3=star_mags, instrument=instrument)
     st.pyplot(fig)
 
 
@@ -108,13 +228,23 @@ LIGHTCURVE_PRESETS = {
     "Custom": None,
     "HAT-P-32 b": dict(star_mag=11.44, k=0.1508, b_imp=0.147, t14_h=3.07, u1=0.30, u2=0.28),
     "HD 189733 b": dict(star_mag=7.65, k=0.1504, b_imp=0.671, t14_h=1.83, u1=0.30, u2=0.28),
+    "HD 209458 b": dict(star_mag=7.65, k=0.1209, b_imp=0.507, t14_h=3.07, u1=0.30, u2=0.28),
+    # First transiting exoplanet ever discovered (1999); bright host, Dec +18.9.
+    "WASP-33 b": dict(star_mag=8.14, k=0.1118, b_imp=0.210, t14_h=2.85, u1=0.30, u2=0.28),
+    # Bright, unusual pulsating (delta Scuti) host star; Dec +37.6.
+    "WASP-12 b": dict(star_mag=11.57, k=0.1170, b_imp=0.424, t14_h=3.00, u1=0.30, u2=0.28),
+    # Famous inspiraling/tidally-disrupting hot Jupiter; Dec +29.7.
+    "Qatar-1 b": dict(star_mag=12.69, k=0.1463, b_imp=0.645, t14_h=1.66, u1=0.30, u2=0.28),
+    # Deep (~2.1%) transit, circumpolar from mid-northern latitudes at Dec +65.
 }
 
 
 def page_lightcurve_simulator():
     st.header("Light Curve Simulator")
     st.caption("Simulate a single-target transit light curve for given star/planet "
-               "parameters and Seestar exposure settings.")
+               "parameters and instrument exposure settings.")
+
+    instrument = instrument_form("lc")
 
     preset_name = st.selectbox("Preset", list(LIGHTCURVE_PRESETS.keys()))
     preset = LIGHTCURVE_PRESETS[preset_name] or {}
@@ -150,7 +280,8 @@ def page_lightcurve_simulator():
     if st.button("Simulate", type="primary"):
         result = simulate_transit(star_mag=star_mag, k=k, b_imp=b_imp, t14_h=t14_h,
                                    u1=u1, u2=u2, exposure_s=exposure_s, sky_mag=sky_mag,
-                                   obs_hours=obs_hours, bin_min=bin_min, seed=int(seed))
+                                   obs_hours=obs_hours, bin_min=bin_min, seed=int(seed),
+                                   instrument=instrument)
         st.pyplot(result.fig)
 
         m1, m2, m3, m4 = st.columns(4)
@@ -176,13 +307,17 @@ def page_tonight_transits():
                "from your site during tonight's dark window.")
 
     site = site_form("transits")
+    instrument = instrument_form("transits")
 
     c1, c2, c3 = st.columns(3)
     min_alt = c1.slider("Min. altitude throughout transit (deg)", 0.0, 80.0, 35.0, 1.0)
     bright_limit = c1.number_input("Bright limit (V mag, may saturate below)", value=5.5, format="%.1f")
     faint_limit = c2.number_input("Faint limit (V mag, poor SNR above)", value=10.5, format="%.1f")
     min_depth = c2.number_input("Min. transit depth (%)", value=1.5, min_value=0.0, format="%.2f")
-    sky_mag_obs = c3.number_input("Sky brightness at your site (mag/arcsec2)", value=18.0, format="%.1f")
+    sky_mag_obs = c3.number_input("Sky brightness at your site (mag/arcsec2)", value=site.sky_mag,
+                                   format="%.2f", key="transits_sky_mag",
+                                   help="Prefilled from the preset observatory; edit freely for tonight's actual "
+                                        "conditions (moon phase, haze, etc).")
     n_top = c3.slider("Number of candidates to show", 1, 15, 5)
 
     include_toi = st.checkbox(
@@ -208,6 +343,8 @@ def page_tonight_transits():
             f"{local_iso(dark_window.dark_end, site.tz)}"
         )
 
+        show_weather(dark_window)
+
         planets = cached_fetch_transiting_planets(bright_limit, faint_limit, min_depth)
         st.write(f"{len(planets)} confirmed transiting planets in magnitude/depth range retrieved from archive.")
 
@@ -216,7 +353,7 @@ def page_tonight_transits():
             st.write(f"{len(toi_planets)} unverified TOI candidates in range retrieved from ExoFOP/TOI table.")
             planets = planets + toi_planets
 
-        top = find_tonight_transits(planets, dark_window, min_alt, sky_mag_obs, n_top)
+        top = find_tonight_transits(planets, dark_window, min_alt, sky_mag_obs, n_top, instrument=instrument)
 
         if not top:
             st.info("No transits found. Try relaxing min. altitude, faint limit, or min. depth.")
@@ -231,7 +368,7 @@ def page_tonight_transits():
             "Mid-transit (UTC)": c.tmid_jd,
         } for c in top], hide_index=True)
 
-        fig = build_transit_figures(top, dark_window, sky_mag_obs)
+        fig = build_transit_figures(top, dark_window, sky_mag_obs, instrument=instrument)
         if fig is not None:
             st.pyplot(fig)
 
@@ -246,6 +383,7 @@ def page_tonight_eb():
                "The VSX query can take 1-2 minutes in dense fields.")
 
     site = site_form("eb")
+    instrument = instrument_form("eb")
 
     c1, c2, c3 = st.columns(3)
     min_depth_eb = c1.number_input("Min. primary eclipse depth (mag)", value=0.01, min_value=0.0, format="%.3f")
@@ -257,7 +395,10 @@ def page_tonight_eb():
                                  "~45-50 deg cones on dense fields.")
     bright_limit_eb = c1.number_input("Bright limit (V mag)", value=5.0, format="%.1f")
     faint_limit_eb = c2.number_input("Faint limit (V mag)", value=13.0, format="%.1f")
-    sky_mag_obs_eb = c3.number_input("Sky brightness at your site (mag/arcsec2)", value=18.0, format="%.1f")
+    sky_mag_obs_eb = c3.number_input("Sky brightness at your site (mag/arcsec2)", value=site.sky_mag,
+                                      format="%.2f", key="eb_sky_mag",
+                                      help="Prefilled from the preset observatory; edit freely for tonight's "
+                                           "actual conditions (moon phase, haze, etc).")
     n_top_eb = st.slider("Number of candidates to show", 1, 20, 10)
     include_compact = st.checkbox("Include curated compact-object systems (WD/NS/BH)", value=True)
 
@@ -274,6 +415,8 @@ def page_tonight_eb():
             f"**Local time ({site.tz}):** {local_iso(dark_window.dark_start, site.tz)} - "
             f"{local_iso(dark_window.dark_end, site.tz)}"
         )
+
+        show_weather(dark_window)
 
         ra_center, dec_center, radius_deg = vsx_cone_for_site(dark_window, min_alt_eb)
         vsx_rows, used_radius = cached_query_vsx(ra_center, dec_center, radius_deg,
@@ -293,7 +436,7 @@ def page_tonight_eb():
             min_depth_eb=min_depth_eb, max_period_eb=max_period_eb,
             min_dur_eb=min_dur_eb_min / 60.0, max_dur_eb=max_dur_eb,
             min_alt_eb=min_alt_eb, sky_mag_obs=sky_mag_obs_eb, n_top=n_top_eb,
-            include_compact_systems=include_compact,
+            include_compact_systems=include_compact, instrument=instrument,
         )
 
         if not top:
@@ -310,7 +453,7 @@ def page_tonight_eb():
             "Mid-eclipse (UTC)": c.tmid_jd,
         } for c in top], hide_index=True)
 
-        fig = build_eb_figures(top, dark_window, sky_mag_obs_eb)
+        fig = build_eb_figures(top, dark_window, sky_mag_obs_eb, instrument=instrument)
         if fig is not None:
             st.pyplot(fig)
 
