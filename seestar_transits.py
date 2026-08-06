@@ -28,9 +28,12 @@ def sfloat(v, default=None):
 
 
 def fetch_transiting_planets(bright_limit: float, faint_limit: float, min_depth_pct: float,
-                              timeout: int = 45) -> List[dict]:
+                              timeout: int = 45) -> Optional[List[dict]]:
     """Query the NASA Exoplanet Archive (TAP/ADQL) for transiting planets in the given
-    magnitude / depth range. `min_depth_pct` is in percent (e.g. 1.0 = 1%)."""
+    magnitude / depth range. `min_depth_pct` is in percent (e.g. 1.0 = 1%).
+
+    Returns None (rather than raising) if the archive is unreachable or blocks the
+    request, so callers can show a friendly notice instead of a raw traceback."""
     adql = (
         "SELECT pl_name,hostname,ra,dec,sy_vmag,"
         "pl_orbper,pl_tranmid,pl_trandur,pl_trandep,pl_ratror,pl_imppar "
@@ -42,13 +45,16 @@ def fetch_transiting_planets(bright_limit: float, faint_limit: float, min_depth_
         f"AND sy_vmag>={bright_limit} AND sy_vmag<={faint_limit} "
         f"AND pl_trandep>={min_depth_pct}"
     )
-    resp = requests.get(ARCHIVE_URL, params={"query": adql, "format": "csv"}, timeout=timeout)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(ARCHIVE_URL, params={"query": adql, "format": "csv"}, timeout=timeout)
+        resp.raise_for_status()
+    except requests.RequestException:
+        return None
     return list(csv.DictReader(io.StringIO(resp.text)))
 
 
 def fetch_toi_candidates(bright_limit: float, faint_limit: float, min_depth_pct: float,
-                          dispositions=("PC", "APC"), timeout: int = 45) -> List[dict]:
+                          dispositions=("PC", "APC"), timeout: int = 45) -> Optional[List[dict]]:
     """Query the NASA Exoplanet Archive's TESS Objects of Interest (TOI) table -
     the same catalog ExoFOP-TESS serves, mirrored on the archive's TAP endpoint.
 
@@ -60,7 +66,8 @@ def fetch_toi_candidates(bright_limit: float, faint_limit: float, min_depth_pct:
 
     Returns rows reshaped into the same dict schema as
     `fetch_transiting_planets`, with an added "source" key, so both can be
-    passed to `find_tonight_transits` together.
+    passed to `find_tonight_transits` together. Returns None (rather than
+    raising) if the archive is unreachable or blocks the request.
     """
     disp_list = ",".join(f"'{d}'" for d in dispositions)
     adql = (
@@ -73,8 +80,11 @@ def fetch_toi_candidates(bright_limit: float, faint_limit: float, min_depth_pct:
         f"AND pl_trandep>={min_depth_pct * 1e4} "   # pl_trandep is in ppm here (not % as in pscomppars)
         f"AND tfopwg_disp IN ({disp_list})"
     )
-    resp = requests.get(ARCHIVE_URL, params={"query": adql, "format": "csv"}, timeout=timeout)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(ARCHIVE_URL, params={"query": adql, "format": "csv"}, timeout=timeout)
+        resp.raise_for_status()
+    except requests.RequestException:
+        return None
     rows = list(csv.DictReader(io.StringIO(resp.text)))
 
     planets = []
